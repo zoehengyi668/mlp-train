@@ -127,50 +127,43 @@ class AbsDiffE(SelectionMethod):
 
 
 class AtomicEnvSimilarity(SelectionMethod):
-    def __init__(self, descriptor, threshold: float = 0.999):
+    def __init__(
+        self, descriptor, threshold: float = 0.999, aggregator: str = 'mean'
+    ):
         """
-        Selection criteria based on the maximum distance between any of the
-        training set and a new configuration. Evaluated based on the similarity
-        SOAP kernel vector (K*) between a new configuration and prior training
-        data
+        Selection criteria based on SOAP similarity between a new
+        configuration and prior training data.
 
-        -----------------------------------------------------------------------
         Arguments:
             descriptor: A descriptor instance (e.g., SoapDescriptor) with user-defined parameters.
-            threshold: Value below which a configuration will be selected
+            threshold: Value below which a configuration will be selected.
+            aggregator: Method to reduce per-atom kernel similarities to a single value.
+                        Options: "mean", "max", "min", "median".
         """
         super().__init__()
 
         if threshold < 0.1 or threshold >= 1.0:
-            raise ValueError('Cannot have a threshold outside [0.1, 1]')
+            raise ValueError('Threshold must be in [0.1, 1)')
 
         self.descriptor = descriptor
-        """
-        Call the descriptor instance with user-defined parameters,
-        eg. SoapDescriptor = SoapDescriptor(average="outer", r_cut=6.0, n_max=8, l_max=8)
-        selector = AtomicEnvSimilarity(descriptor=SoapDescriptor, threshold=0.95)
-        """
         self.threshold = float(threshold)
         self._k_vec = np.array([])
 
-    def __call__(
-        self,
-        configuration: 'mlptrain.Configuration',
-        mlp: 'mlptrain.potentials.MLPotential',
-        **kwargs,
-    ) -> None:
+        # Define how to aggregate per-atom kernel values (used only if average="off")
+        self.aggregator = aggregator.lower()
+        if self.aggregator not in ['mean', 'max', 'min', 'median']:
+            raise ValueError(
+                "Aggregator must be one of: 'mean', 'max', 'min', 'median'"
+            )
+
+    def __call__(self, configuration, mlp, **kwargs):
         """
-        Evaluate the selection criteria
-
-        -----------------------------------------------------------------------
-        Arguments:
-            configuration: Configuration to evaluate on
-
-            mlp: Machine learning potential with some associated training data
+        Compute the kernel similarity between a new configuration and the training data.
         """
         if len(mlp.training_data) == 0:
             return None
 
+        # Compute kernel similarity
         self._k_vec = self.descriptor.kernel_vector(
             configuration, configurations=mlp.training_data, zeta=8
         )
@@ -178,23 +171,46 @@ class AtomicEnvSimilarity(SelectionMethod):
         return None
 
     @property
+    def aggregate_similarity(self) -> float:
+        """
+        Compute a single similarity value.
+        - If SOAP uses averaging ("inner" or "outer"), `_k_vec` is already a single value.
+        - If SOAP is non-averaged ("off"), `_k_vec` is an array, and we compute an aggregate.
+        """
+        if len(self._k_vec) == 0:
+            return 0.0  # If no training data, assume zero similarity
+
+        if self.descriptor.average == 'off':
+            # If SOAP is non-averaged, compute aggregate similarity from atomic values
+            if self.aggregator == 'mean':
+                return np.mean(self._k_vec)
+            elif self.aggregator == 'max':
+                return np.max(self._k_vec)
+            elif self.aggregator == 'min':
+                return np.min(self._k_vec)
+            elif self.aggregator == 'median':
+                return np.median(self._k_vec)
+        else:
+            # If SOAP is already averaged, return the single similarity value directly
+            return (
+                float(self._k_vec[0])
+                if self._k_vec.size == 1
+                else np.mean(self._k_vec)
+            )
+
+    @property
     def select(self) -> bool:
         """
-        Determine if this configuration should be selected, based on the
-        minimum similarity between it and all of the training data
-
-        -----------------------------------------------------------------------
-        Returns:
-            (bool): If this configuration should be selected
+        Determine if this configuration should be selected based on the aggregated similarity.
         """
         if self._n_training_envs == 0:
-            return True
+            return True  # Always select if no training data exists
 
-        return self.threshold**2 < np.max(self._k_vec) < self.threshold
+        return self.threshold**2 < self.aggregate_similarity < self.threshold
 
     @property
     def too_large(self) -> bool:
-        return np.max(self._k_vec) < self.threshold**2
+        return self.aggregate_similarity < self.threshold**2
 
     @property
     def n_backtrack(self) -> int:
