@@ -72,7 +72,7 @@ def test_selection_with_non_averaged_soap():
 
     # Non-averaged SOAP descriptor
     SoapDescriptor3 = mlt.descriptor.SoapDescriptor(
-        average='off', r_cut=6.0, n_max=8, l_max=8
+        average='off', r_cut=2.0, n_max=8, l_max=8
     )
 
     # Aggregation using mean similarity
