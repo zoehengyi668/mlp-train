@@ -77,7 +77,7 @@ def test_selection_with_non_averaged_soap():
 
     # Aggregation using mean similarity
     selector3 = AtomicEnvSimilarity(
-        descriptor=SoapDescriptor3, threshold=0.9, aggregator='mean'
+        descriptor=SoapDescriptor3, threshold=0.25, aggregator='mean'
     )
 
     mlp = mlt.potentials.GAP('blank')
