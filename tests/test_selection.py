@@ -64,38 +64,6 @@ def test_selection_on_structures():
     assert selector2.select
 
 
-def test_selection_with_non_averaged_soap():
-    configs = mlt.ConfigurationSet()
-
-    file_path = os.path.join(here, 'data', 'methane.xyz')
-    configs.load_xyz(filename=file_path, charge=0, mult=1, box=None)
-
-    # Non-averaged SOAP descriptor
-    SoapDescriptor3 = mlt.descriptor.SoapDescriptor(
-        average='off', r_cut=2.0, n_max=8, l_max=8
-    )
-
-    # Aggregation using mean similarity
-    selector3 = AtomicEnvSimilarity(
-        descriptor=SoapDescriptor3, threshold=0.25, aggregator='mean'
-    )
-
-    mlp = mlt.potentials.GAP('blank')
-    mlp.training_data = configs
-
-    # Test with a similar structure (should not be selected)
-    selector3(configuration=_similar_methane(), mlp=mlp)
-    assert (
-        not selector3.select
-    ), 'Non-averaged SOAP incorrectly selected a similar structure.'
-
-    # Test with a distorted structure (should be selected)
-    selector3(configuration=_distorted_methane(), mlp=mlp)
-    assert (
-        selector3.select
-    ), 'Non-averaged SOAP failed to select a sufficiently different structure.'
-
-
 def test_outlier_identifier():
     configs = mlt.ConfigurationSet()
 

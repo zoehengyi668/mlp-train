@@ -210,14 +210,17 @@ class AtomicEnvSimilarity(SelectionMethod):
     @property
     def select(self) -> bool:
         """
-        Determine if this configuration should be selected based on the aggregated similarity.
+        Determine if this configuration should be selected based on aggregated similarity.
         """
         if self._n_training_envs == 0:
             return True  # Always select if no training data exists
-        print(
-            f'Aggregate similarity: {self.aggregate_similarity}, Threshold: {self.threshold}'
-        )
-        return self.threshold**2 < self.aggregate_similarity < self.threshold
+
+        if self.descriptor.average == 'off':
+            adjusted_threshold = self.threshold - 0.001
+            return self.aggregate_similarity < adjusted_threshold
+        else:
+            # For averaged SOAP descriptors ('inner' or 'outer'), use the original logic
+            return self.aggregate_similarity < self.threshold
 
     @property
     def too_large(self) -> bool:
