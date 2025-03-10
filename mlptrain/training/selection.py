@@ -167,7 +167,15 @@ class AtomicEnvSimilarity(SelectionMethod):
         self._k_vec = self.descriptor.kernel_vector(
             configuration, configurations=mlp.training_data, zeta=8
         )
-        print(f'_k_vec values: {self._k_vec}')
+
+        # Apply normalization only if SOAP is non-averaged ('off')
+        if self.descriptor.average == 'off':
+            max_value = (
+                np.max(self._k_vec) if np.max(self._k_vec) > 0 else 1
+            )  # Avoid division by zero
+            self._k_vec = self._k_vec / max_value  # Normalize
+
+        print(f'_k_vec values: {self._k_vec}')  # Debugging print
 
         return None
 
