@@ -167,6 +167,7 @@ class AtomicEnvSimilarity(SelectionMethod):
         self._k_vec = self.descriptor.kernel_vector(
             configuration, configurations=mlp.training_data, zeta=8
         )
+        print(f'_k_vec values: {self._k_vec}')
 
         return None
 
@@ -205,7 +206,9 @@ class AtomicEnvSimilarity(SelectionMethod):
         """
         if self._n_training_envs == 0:
             return True  # Always select if no training data exists
-
+        print(
+            f'Aggregate similarity: {self.aggregate_similarity}, Threshold: {self.threshold}'
+        )
         return self.threshold**2 < self.aggregate_similarity < self.threshold
 
     @property
