@@ -154,6 +154,6 @@ class SoapDescriptor(Descriptor):
             structure_similarity = np.mean(
                 per_atom_similarities, axis=1
             )  # Average per-atom similarities
-            structure_similarity = np.power(structure_similarity,zeta)
+            structure_similarity = np.power(structure_similarity, zeta)
 
             return structure_similarity
