@@ -107,73 +107,56 @@ class SoapDescriptor(Descriptor):
         )
         return soap_vec if soap_vec.ndim > 1 else soap_vec.reshape(1, -1)
 
+    def kernel_vector(
+        self,
+        configuration: mlptrain.Configuration,
+        configurations: mlptrain.ConfigurationSet,
+        zeta: int = 4,
+    ) -> np.ndarray:
+        """Calculate the kernel matrix between a set of configurations where the
+        kernel is:
 
-def kernel_vector(
-    self,
-    configuration: mlptrain.Configuration,
-    configurations: mlptrain.ConfigurationSet,
-    zeta: int = 4,
-) -> np.ndarray:
-    """Calculate the kernel matrix between a set of configurations where the
-    kernel is:
+        .. math::
 
-    .. math::
+            K(p_a, p_b) = (p_a . p_b / (p_a.p_a x p_b.p_b)^1/2 )^ζ
 
-        K(p_a, p_b) = (p_a . p_b / (p_a.p_a x p_b.p_b)^1/2 )^ζ
+        ---------------------------------------------------------------------------
+        Arguments:
+            configuration:
 
-    ---------------------------------------------------------------------------
-    Arguments:
-        configuration:
+            configurations:
 
-        configurations:
+            zeta: Power to raise the kernel matrix to
 
-        zeta: Power to raise the kernel matrix to
+        Returns:
+            (np.ndarray): Vector, shape = len(configurations)"""
 
-    Returns:
-        (np.ndarray): Vector, shape = len(configurations)"""
+        v1 = self.compute_representation(configuration)
+        m1 = self.compute_representation(configurations)
 
-    v1 = self.compute_representation(configuration)
-    m1 = self.compute_representation(configurations)
+        if self.average in ['inner', 'outer']:
+            v1 = v1[0]  # Single vector for entire structure
+            m1 = m1  # Each row represents one configuration
 
-    if self.average in ['inner', 'outer']:
-        v1 = v1[0]  # Single vector for entire structure
-        m1 = m1  # Each row represents one configuration
+            # Normalize vectors
+            v1 /= np.linalg.norm(v1)
+            m1 /= np.linalg.norm(m1, axis=1, keepdims=True)
 
-        # Normalize vectors
-        v1 /= np.linalg.norm(v1)
-        m1 /= np.linalg.norm(m1, axis=1, keepdims=True)
+            return np.power(np.dot(m1, v1), zeta)
 
-        return np.power(np.dot(m1, v1), zeta)
+        elif self.average == 'off':
+            v1 /= np.linalg.norm(v1, axis=1, keepdims=True)
+            m1 /= np.linalg.norm(m1, axis=2, keepdims=True)
 
-    elif self.average == 'off':
-        v1 /= np.linalg.norm(v1, axis=1, keepdims=True)
-        m1 /= np.linalg.norm(m1, axis=2, keepdims=True)
+            # Apply zeta before computing per-atom similarity
+            v1 = np.power(v1, zeta)
+            m1 = np.power(m1, zeta)
 
-        # Apply zeta before computing per-atom similarity
-        v1 = np.power(v1, zeta)
-        m1 = np.power(m1, zeta)
+            per_atom_similarities = np.einsum(
+                'ad,cad->ca', v1, m1
+            )  # Compute per-atom kernel similarities
+            structure_similarity = np.mean(
+                per_atom_similarities, axis=1
+            )  # Average per-atom similarities
 
-        per_atom_similarities = np.einsum(
-            'ad,cad->ca', v1, m1
-        )  # Compute per-atom kernel similarities
-        structure_similarity = np.mean(
-            per_atom_similarities, axis=1
-        )  # Average per-atom similarities
-
-        return structure_similarity
-
-    elif self.average == 'off':
-        # Off-averaged: multiple atomic descriptors per structure
-        v1 /= np.linalg.norm(v1, axis=1, keepdims=True)
-        m1 /= np.linalg.norm(m1, axis=2, keepdims=True)
-
-        per_atom_similarities = np.einsum(
-            'ad,cad->ca', v1, m1
-        )  # Compute per-atom kernel similarities
-        structure_similarity = np.mean(
-            per_atom_similarities, axis=1
-        )  # Average per-atom similarities
-
-        return np.power(
-            structure_similarity, zeta
-        )  # Apply zeta AFTER averaging
+            return structure_similarity
