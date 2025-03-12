@@ -148,15 +148,12 @@ class SoapDescriptor(Descriptor):
             v1 /= np.linalg.norm(v1, axis=1, keepdims=True)
             m1 /= np.linalg.norm(m1, axis=2, keepdims=True)
 
-            # Apply zeta before computing per-atom similarity
-            v1 = np.power(v1, zeta)
-            m1 = np.power(m1, zeta)
-
             per_atom_similarities = np.einsum(
                 'ad,cad->ca', v1, m1
             )  # Compute per-atom kernel similarities
             structure_similarity = np.mean(
                 per_atom_similarities, axis=1
             )  # Average per-atom similarities
+            structure_similarity = np.power(structure_similarity,zeta)
 
             return structure_similarity

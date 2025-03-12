@@ -1,0 +1,6 @@
+[deps]
+ACE = "3e8ccfd2-c8b0-11ea-32f1-f3a5990fd77a"
+ASE = "51974c44-a7ed-5088-b8be-3e78c8ba416c"
+IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
+IPFitting = "3002bd4c-79e4-52ce-b924-91256dde4e52"
+JuLIP = "945c410c-986d-556a-acb1-167a618e0462"
