@@ -1,10 +1,9 @@
 import numpy as np
 import mlptrain
-import julia
-from julia import Main
 from typing import Union, Optional, Sequence
 from mlptrain.descriptor._base import Descriptor
-from julia.api import Julia
+import Julia
+from julia import Main
 
 jl = Julia(compiled_modules=False)
 
@@ -42,9 +41,8 @@ class ACEDescriptor(Descriptor):
         self.rin = rin
         self.rcut = rcut
         self.pin = pin
-
         # Initialize Julia and ACE1pack
-        self.jl = julia.api.Julia(compiled_modules=False)
+        self.jl = Julia(compiled_modules=False)
         Main.eval(
             'using ACE1pack, LazyArtifacts, MultivariateStats, JuLIP, Glob'
         )

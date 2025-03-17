@@ -4,6 +4,9 @@ from mlptrain.descriptor import ACEDescriptor
 from mlptrain.descriptor import SoapDescriptor
 from mlptrain import Configuration, ConfigurationSet
 import numpy as np
+from julia.api import Julia
+
+jl = Julia(compiled_modules=False)
 
 
 @pytest.fixture
