@@ -1,11 +1,15 @@
 import numpy as np
 import mlptrain
+from autode.atoms import Atom
 from typing import Union, Optional, Sequence
 from mlptrain.descriptor._base import Descriptor
-import Julia
-from julia import Main
+from ase import io
+from ase import Atoms
+from io import StringIO
+from julia.api import Julia
 
 jl = Julia(compiled_modules=False)
+from julia import Main
 
 
 class ACEDescriptor(Descriptor):
@@ -15,7 +19,7 @@ class ACEDescriptor(Descriptor):
         self,
         elements: Optional[Sequence[str]] = None,
         N: int = 3,
-        max_deg: int = 12,
+        max_deg: int = 6,
         r0: float = 2.3,
         rin: float = 0.1,
         rcut: float = 5.0,
@@ -26,7 +30,7 @@ class ACEDescriptor(Descriptor):
 
         Arguments:
             elements (Optional[Sequence[str]]): Atomic species to be used for the ACE basis.
-            N (int): (N+1)is the body correlation number, i.e., N=3 means up to 4-body correlations.
+            N (int): (N+1) is the body correlation number, i.e., N=3 means up to 4-body correlations.
             max_deg (int): Maximum polynomial degree for expansion.
             r0 (float): Reference bond length.
             rin (float): Inner cutoff for radial basis.
@@ -41,6 +45,7 @@ class ACEDescriptor(Descriptor):
         self.rin = rin
         self.rcut = rcut
         self.pin = pin
+
         # Initialize Julia and ACE1pack
         self.jl = Julia(compiled_modules=False)
         Main.eval(
@@ -77,28 +82,26 @@ class ACEDescriptor(Descriptor):
             mlptrain.Configuration, mlptrain.ConfigurationSet
         ],
     ) -> np.ndarray:
-        """Create a SOAP vector using dscribe (https://github.com/SINGROUP/dscribe)
-        for a set of configurations
+        """
+        Compute the ACE descriptor for a set of configurations.
 
-        ace_vector(config)           -> [[v0, v1, ..]]
+        Handles Extended XYZ format directly to avoid unnecessary ASE conversions.
 
-        ace_vector(config1, config2) -> [[v0, v1, ..],
-                                      [u0, u1, ..]]
-
-        ace_vector(configset)        -> [[v0, v1, ..], ..]
-
-        ---------------------------------------------------------------------------
-        Arguments:
-        args: Configurations to use
+        Returns:
+            np.ndarray: ACE descriptor matrix.
         """
         if isinstance(configurations, mlptrain.Configuration):
             configurations = [
                 configurations
-            ]  # Convert to list if it's a single Configuration
-        elif not isinstance(configurations, mlptrain.ConfigurationSet):
+            ]  # Convert single configuration to list
+            single_config = True
+        elif isinstance(configurations, mlptrain.ConfigurationSet):
+            single_config = False
+        else:
             raise ValueError(
                 f'Unsupported configuration type: {type(configurations)}'
             )
+
         # Dynamically initialize basis if needed
         if self.basis is None:
             if not self.elements:
@@ -109,25 +112,55 @@ class ACEDescriptor(Descriptor):
 
         ace_vecs = []
         for conf in configurations:
-            conf = conf.ase_atoms
-            Main.eval(f'dataset = JuLIP.read_extxyz(IOBuffer("{conf}"))')
+            if isinstance(conf.atoms, Atoms):
+                ase_atoms = conf.atoms  # ASE Atoms object is already correct
+            elif isinstance(conf.atoms, list) and isinstance(
+                conf.atoms[0], Atom
+            ):
+                # Convert a list of autode Atoms to ASE Atoms
+                symbols = [atom.label for atom in conf.atoms]
+                positions = [atom.coord for atom in conf.atoms]
+                ase_atoms = Atoms(symbols=symbols, positions=positions)
+            else:
+                raise TypeError(f'Unexpected atoms format: {type(conf.atoms)}')
+            if not np.any(ase_atoms.cell):
+                ase_atoms.set_cell(
+                    [[100.0, 0.0, 0.0], [0.0, 100.0, 0.0], [0.0, 0.0, 100.0]]
+                )
+
+            extxyz_io = StringIO()
+            io.write(extxyz_io, ase_atoms, format='extxyz')
+            extxyz_string = extxyz_io.getvalue()
+            # compute the ace descriptor,averagd method
+            Main.eval(
+                f'dataset = JuLIP.read_extxyz(IOBuffer("""{extxyz_string}"""))'
+            )
+
+            # Compute ACE descriptor
             descriptor = Main.eval(
                 """
             descriptors = []
             for atoms in dataset
-                per_atom_descriptors = []
                 for i in 1:length(atoms)
-                    push!(per_atom_descriptors, site_energy(basis, atoms, i))
-                end
-                push!(descriptors, per_atom_descriptors)
+                    descriptor = site_energy(basis, atoms, i)
+                    push!(descriptors, descriptor)
+                end                 
             end
-            return descriptors
+             return descriptors
             """
             )
-            ace_vecs.append(np.array(descriptor))
+            descriptor_np = np.array(
+                descriptor, dtype=np.float64
+            )  # Shape (num_atoms, descriptor_dim)
 
-        ace_vecs = np.array(ace_vecs)
-        return ace_vecs if ace_vecs.ndim > 1 else ace_vecs.reshape(1, -1)
+            if descriptor_np.ndim == 1:
+                descriptor_np = descriptor_np.reshape(1, -1)
+            ace_vecs.append(descriptor_np)
+
+        ace_vecs = np.stack(
+            ace_vecs, axis=0
+        )  # Shape: (num_configs, num_atoms, descriptor_dim)
+        return ace_vecs.squeeze() if single_config else ace_vecs
 
     def kernel_vector(
         self,
@@ -146,8 +179,12 @@ class ACEDescriptor(Descriptor):
         Returns:
             np.ndarray: Kernel similarity vector.
         """
-        v1 = self.compute_representation(configuration)[0]
-        m1 = self.compute_representation(configurations)
+        v1 = self.compute_representation(configuration)  # Shape: (23, 10743)
+        m1 = self.compute_representation(
+            configurations
+        )  # Shape: (2, 23, 10743)
+        # Normalize vectors per atom
+
         v1 /= np.linalg.norm(v1, axis=1, keepdims=True)
         m1 /= np.linalg.norm(m1, axis=2, keepdims=True)
 
@@ -158,4 +195,6 @@ class ACEDescriptor(Descriptor):
             per_atom_similarities, axis=1
         )  # Average per-atom similarities
         structure_similarity = np.power(structure_similarity, zeta)
+
         return structure_similarity
+
